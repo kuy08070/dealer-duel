@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>딜러 대결 프로토타입</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #d9ddd5; --bg-deep: #c4cac0; --surface: #e6e9e2; --ink: #1e2228; --muted: #5a616b;
+  --line: rgba(30, 34, 40, .2); --slot: rgba(30, 34, 40, .07);
+  --card: #f6f3ea; --card-edge: #a19c8f;
+  --env: #3f6e36; --cre: #9a4824; --evt: #464b98;
+  --sel: #d98a1a; --good: #2f6b3a; --bad: #a3221b;
+  --back-a: #2c3a4a; --back-b: #3c5066; --shadow: rgba(20, 24, 30, .22);
+  --btn: #1e2228; --btn-ink: #eef0ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #16191e; --bg-deep: #0e1013; --surface: #1e2229; --ink: #e9e4d8; --muted: #9a958a;
+    --line: rgba(233, 228, 216, .16); --slot: rgba(233, 228, 216, .05);
+    --card: #ebe5d5; --card-edge: #5d5a52;
+    --env: #3f6e36; --cre: #9a4824; --evt: #464b98;
+    --sel: #f0a63a; --good: #6fbf7c; --bad: #ef6b5f;
+    --back-a: #3a2a1e; --back-b: #5a4030; --shadow: rgba(0, 0, 0, .5);
+    --btn: #e9e4d8; --btn-ink: #16191e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16191e; --bg-deep: #0e1013; --surface: #1e2229; --ink: #e9e4d8; --muted: #9a958a;
+  --line: rgba(233, 228, 216, .16); --slot: rgba(233, 228, 216, .05);
+  --card: #ebe5d5; --card-edge: #5d5a52;
+  --env: #3f6e36; --cre: #9a4824; --evt: #464b98;
+  --sel: #f0a63a; --good: #6fbf7c; --bad: #ef6b5f;
+  --back-a: #3a2a1e; --back-b: #5a4030; --shadow: rgba(0, 0, 0, .5);
+  --btn: #e9e4d8; --btn-ink: #16191e;
+}
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; min-height: 100vh;
+  background: radial-gradient(ellipse at 50% 30%, var(--surface) 0%, var(--bg) 60%, var(--bg-deep) 100%);
+  background-color: var(--bg); color: var(--ink);
+  font-family: "Gowun Batang", "Noto Serif KR", "Nanum Myeongjo", "Apple SD Gothic Neo", serif;
+  line-height: 1.55; -webkit-tap-highlight-color: transparent;
+}
+.app { max-width: 820px; margin: 0 auto; padding: 16px 12px 48px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 14px; }
+h1 { font-size: 1.4rem; margin: 0; line-height: 1.2; }
+.progress { font-size: .95rem; color: var(--muted); }
+.progress b { color: var(--ink); font-family: "Cinzel", "Gowun Batang", serif; }
+
+button {
+  font: inherit; font-size: .92rem; padding: 8px 16px; border-radius: 6px; border: none;
+  background: var(--btn); color: var(--btn-ink); cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button:disabled { opacity: .35; cursor: not-allowed; }
+button:focus-visible, .card:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+
+section.side { padding: 12px 0; }
+.side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.side-head h2 { font-size: 1.05rem; margin: 0; }
+.ftotal { font-size: .9rem; color: var(--muted); }
+.ftotal b { font-family: "Cinzel", "Gowun Batang", serif; font-size: 1.35rem; color: var(--ink); margin-left: 4px; }
+
+.field { display: grid; gap: 8px; }
+.frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .85rem; }
+.flabel { color: var(--muted); min-width: 3.2em; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px;
+  background: var(--slot); border: 1px solid var(--line); font-size: .85rem; white-space: nowrap;
+}
+.chip.env { border-color: var(--env); }
+.chip.evt { border-color: var(--evt); }
+.chip.past { opacity: .4; text-decoration: line-through; }
+.chip.tagc.on { background: var(--sel); color: #1e2228; border-color: var(--sel); }
+.none { color: var(--muted); font-size: .85rem; }
+
+.creatures { display: flex; flex-wrap: wrap; gap: 8px; }
+.mini {
+  width: 88px; padding: 6px 6px 7px; border-radius: 8px; background: var(--card); color: #1e2228;
+  border: 1px solid var(--card-edge); border-top: 4px solid var(--cre); text-align: center;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+.mini .mi { font-size: 1.4rem; line-height: 1.1; }
+.mini .mn { font-size: .78rem; }
+.mini .ms { font-family: "Cinzel", "Gowun Batang", serif; font-weight: 700; font-size: 1.25rem; line-height: 1.1; }
+.mini.fresh { animation: pop .5s ease-out; }
+@keyframes pop { 0% { transform: scale(.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+details.breakdown { font-size: .85rem; color: var(--muted); }
+details.breakdown summary { cursor: pointer; }
+details.breakdown p { margin: 2px 0 0; }
+
+.subs { display: grid; grid-template-columns: repeat(3, minmax(0, 120px)); gap: 8px; margin-top: 10px; }
+.subs .slotlabel { font-size: .75rem; color: var(--muted); margin-bottom: 3px; }
+.emptyslot {
+  height: 150px; border-radius: 8px; border: 1.5px dashed var(--line); background: var(--slot);
+  display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .8rem;
+}
+
+.statusbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px;
+  padding: 10px 12px; margin: 6px 0; border-radius: 8px; background: var(--slot);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 56px;
+}
+.statusbar .msg { font-size: .95rem; }
+.statusbar .msg.phase { font-weight: 700; color: var(--sel); }
+
+/* Cards */
+.card {
+  position: relative; height: 150px; border-radius: 8px; background: var(--card); color: #1e2228;
+  border: 1px solid var(--card-edge); box-shadow: 0 1px 5px var(--shadow);
+  padding: 6px 7px; display: flex; flex-direction: column; gap: 2px; overflow: hidden;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; }
+.card.t-env::before { background: var(--env); }
+.card.t-creature::before { background: var(--cre); }
+.card.t-event::before { background: var(--evt); }
+.card .c-top { display: flex; justify-content: space-between; align-items: center; margin-top: 3px; font-size: .7rem; }
+.card.t-env .c-type { color: var(--env); }
+.card.t-creature .c-type { color: var(--cre); }
+.card.t-event .c-type { color: var(--evt); }
+.card .c-type { font-weight: 700; }
+.card .c-base {
+  font-family: "Cinzel", "Gowun Batang", serif; font-weight: 700; font-size: 1.05rem; line-height: 1;
+  color: var(--cre);
+}
+.card .c-icon { font-size: 1.5rem; line-height: 1.15; text-align: center; }
+.card .c-name { font-weight: 700; font-size: .88rem; text-align: center; line-height: 1.2; }
+.card .c-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px; min-height: 16px; }
+.card .c-chips span { font-size: .66rem; padding: 0 5px; border-radius: 999px; background: rgba(30,34,40,.08); }
+.card .c-text { font-size: .7rem; line-height: 1.3; color: #3b4048; text-align: center; margin-top: auto; }
+.card.back {
+  background: repeating-linear-gradient(45deg, var(--back-a) 0 6px, var(--back-b) 6px 7px), var(--back-a);
+  border: 2px solid var(--card);
+}
+.card.flip { animation: flip .45s ease-out; }
+@keyframes flip { 0% { transform: rotateY(90deg); } 100% { transform: rotateY(0); } }
+
+.hand { display: grid; gap: 12px; margin-top: 12px; }
+.hgroup .hlabel { font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+.hgroup .hlabel b { color: var(--ink); }
+.hcards { display: grid; grid-template-columns: repeat(3, minmax(0, 132px)); gap: 8px; }
+.hcards .card { cursor: pointer; }
+.hcards .card:hover { transform: translateY(-2px); }
+.hcards .card.sel { box-shadow: 0 0 0 3px var(--sel), 0 6px 14px var(--shadow); transform: translateY(-4px); }
+.hgroup.done .card { opacity: .35; cursor: default; transform: none; filter: grayscale(.6); }
+
+.log { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 8px; font-size: .86rem; min-height: 6em; }
+.log p { margin: 0 0 2px; color: var(--muted); }
+.log p:first-child { color: var(--ink); }
+.log .good { color: var(--good); }
+.log .bad { color: var(--bad); }
+
+details.rules {
+  margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+  font-size: .9rem; max-width: 70ch;
+}
+details.rules summary { cursor: pointer; font-weight: 700; }
+details.rules h3 { font-size: .95rem; margin: 12px 0 3px; }
+details.rules p { margin: 0 0 6px; }
+
+.overlay { position: fixed; inset: 0; background: rgba(10, 12, 16, .62); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 100; }
+.overlay[hidden] { display: none; }
+.panel {
+  background: var(--bg); color: var(--ink); border-radius: 12px; padding: 22px 22px 18px;
+  width: 100%; max-width: 520px; max-height: 90vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.4);
+}
+.panel h2 { margin: 0 0 4px; font-size: 1.35rem; text-align: center; }
+.panel .note { text-align: center; color: var(--muted); font-size: .88rem; margin: 0 0 14px; }
+.vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin-bottom: 14px; text-align: center; }
+.vs .who { font-size: .9rem; color: var(--muted); }
+.vs .num { font-family: "Cinzel", "Gowun Batang", serif; font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
+.vs .num.win { color: var(--good); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: .82rem; }
+.cols h3 { font-size: .9rem; margin: 0 0 4px; }
+.cols p { margin: 0 0 6px; color: var(--muted); }
+.cols p b { color: var(--ink); }
+.panel .btnrow { text-align: center; margin-top: 16px; }
+@media (max-width: 480px) { .cols { grid-template-columns: 1fr; } }
+
+.side + .side { border-top: 1px solid var(--line); }
+.tray { margin-top: 8px; }
+.tabs { display: none; }
+.mini { cursor: pointer; }
+.mini.open { box-shadow: 0 0 0 2px var(--sel); }
+.bd-line { font-size: .85rem; color: var(--muted); margin: 6px 0 0; }
+.bd-line b { color: var(--ink); }
+
+@media (max-width: 640px) {
+  .app { padding: 12px 10px calc(var(--tray-h, 260px) + 20px); }
+  header.top { margin-bottom: 6px; }
+  h1 { font-size: 1.2rem; }
+  section.side { padding: 8px 0; }
+  .side-head { margin-bottom: 6px; }
+  .ftotal b { font-size: 1.15rem; }
+  .field { gap: 5px; }
+  .frow { font-size: .8rem; gap: 4px; }
+  .flabel { min-width: 2.6em; }
+  .chip { font-size: .76rem; padding: 1px 7px; }
+  .mini { width: 68px; padding: 4px 3px 5px; }
+  .mini .mi { font-size: 1.1rem; }
+  .mini .mn { font-size: .72rem; }
+  .mini .ms { font-size: 1.05rem; }
+  details.breakdown { display: none; }
+  .subs { gap: 6px; margin-top: 8px; }
+  .subs .card, .subs .emptyslot { height: 92px; }
+  .subs .card .c-text, .subs .card .c-chips { display: none; }
+  .log { margin-top: 10px; }
+  .tray {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0;
+    background: var(--bg); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px var(--shadow);
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .tray .statusbar { margin: 0 0 6px; padding: 4px 4px; min-height: 0; border: none; background: none; }
+  .tray .statusbar .msg { font-size: .88rem; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tabs button {
+    flex: 1; padding: 7px 4px; font-size: .86rem;
+    background: var(--slot); color: var(--ink); border: 1px solid var(--line);
+  }
+  .tabs button.active { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+  .tabs button.done:not(.active) { opacity: .45; }
+  .hand { margin-top: 0; gap: 0; }
+  .hgroup { display: none; }
+  .hgroup.active { display: block; }
+  .hgroup .hlabel { display: none; }
+  .hcards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .hcards .card { height: 138px; }
+  .hcards .card:hover { transform: none; }
+  .hcards .card.sel { transform: translateY(-3px); }
+  .tray.idle .tabs, .tray.idle .hand { display: none; }
+  .panel { max-height: calc(100dvh - 32px); padding: 18px 16px 14px; }
+  .vs .num { font-size: 1.8rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .mini { transition: none; }
+  .card.flip, .mini.fresh { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>딜러 대결</h1>
+    <div class="progress" id="progress"></div>
+  </header>
+
+  <section class="side" id="dealerSide"></section>
+  <section class="side" id="playerSide"></section>
+
+  <div class="tray" id="tray">
+    <div class="statusbar" id="status"></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="hand" id="hand"></div>
+  </div>
+
+  <section class="log" id="log" aria-live="polite"></section>
+
+  <details class="rules">
+    <summary>규칙 보기</summary>
+    <h3>진행</h3>
+    <p>세트는 3번, 세트마다 턴은 3번이에요. 세트가 시작되면 환경, 크리처, 이벤트를 3장씩, 총 9장 받습니다. 매 턴 딜러와 동시에 한 장씩 내는데, 한 세트 동안 세 종류를 하나씩 내야 해요. 어떤 종류를 먼저 낼지는 자유입니다. 둘 다 고르면 동시에 공개돼요.</p>
+    <h3>시뮬레이션</h3>
+    <p>3턴이 끝나면 지형 단계, 크리처 단계, 이벤트 단계 순으로 결과가 펼쳐져요. 이벤트 단계에서는 지형 변화가 먼저, 점수를 주는 단발 이벤트가 그다음, 상시 이벤트가 마지막으로 놓입니다.</p>
+    <h3>필드는 쌓여요</h3>
+    <p>낸 카드는 필드에 남아서 다음 세트에도 계속 영향을 줘요. 지형은 모두 쌓이고, 기후는 가장 최근 것 하나만 적용돼요. 단발 이벤트로 얻은 점수는 그 크리처에 영구히 붙습니다. 쓰지 않은 손패는 덱으로 돌아가 다시 섞여요.</p>
+    <h3>승리</h3>
+    <p>세트마다 필드 전체의 점수를 계산하지만, 승패는 마지막 3세트의 점수로만 가립니다. 앞 세트는 마지막을 위한 준비예요.</p>
+    <h3>점수와 태그</h3>
+    <p>점수는 크리처만 가져요. 지형, 기후, 상시 이벤트는 크리처 점수를 올리거나 내립니다. 필드에 놓인 지형, 기후, 크리처, 상시 이벤트에는 태그(🌾 농경, 🐺 야생, 💧 물, 🔥 불)가 있고, 같은 태그가 내 필드에 3개 모이면 그 태그 크리처가 +3, 5개면 +6을 받아요. 단발 이벤트에는 태그가 없어요.</p>
+    <h3>상호작용</h3>
+    <p>지형끼리 영향을 줘요. 농지는 호수가 있으면 더 강해지고, 숲은 화산지대와 함께 있으면 불타서 효과가 사라져요. 늪지, 고원, 사냥꾼, 봉화, 독안개는 상대 필드를 보고 내 크리처를 강하게 하거나 상대 크리처를 약하게 합니다.</p>
+    <p>저주와 역병은 상대 크리처 점수를 영구히 깎아요. 같은 세트에 상대가 수호를 냈다면 막힙니다. 견제는 지형 변화 직후의 필드 점수로 판정해요.</p>
+  </details>
+</div>
+
+<div class="overlay" id="overlay" hidden><div class="panel" id="panel"></div></div>
+
+<script>
+(() => {
+  const CFG = { SYN3: 3, SYN5: 6, AI_NOISE: 3, REVEAL_MS: 700, STEP_MS: 1100 };
+
+  const TAGS = {
+    farm:  { name: "농경", icon: "🌾" },
+    wild:  { name: "야생", icon: "🐺" },
+    water: { name: "물",   icon: "💧" },
+    fire:  { name: "불",   icon: "🔥" }
+  };
+  const RACES = { human: "인간", beast: "야수", spirit: "정령" };
+  const TYPES = ["env", "creature", "event"];
+  const TYPE_NAME = { env: "환경", creature: "크리처", event: "이벤트" };
+
+  const CARDS = [
+    // 환경: 지형
+    { id: "grass",    type: "env", sub: "terrain", name: "초원",     icon: "🌿", tag: "farm",  text: "내 모든 크리처 +1" },
+    { id: "farmland", type: "env", sub: "terrain", name: "농지",     icon: "🌱", tag: "farm",  text: "내 인간 크리처 +2. 내 호수가 있으면 +1 더" },
+    { id: "forest",   type: "env", sub: "terrain", name: "숲",       icon: "🌲", tag: "wild",  text: "내 야수 크리처 +2. 내 화산지대가 있으면 불타서 효과 없음" },
+    { id: "lake",     type: "env", sub: "terrain", name: "호수",     icon: "🏞️", tag: "water", text: "내 정령 크리처 +2" },
+    { id: "volcano",  type: "env", sub: "terrain", name: "화산지대", icon: "🌋", tag: "fire",  text: "내 🔥 크리처 +3, 나머지 크리처 −1" },
+    { id: "marsh",    type: "env", sub: "terrain", name: "늪지",     icon: "🌫️", tag: "water", text: "내 💧 크리처 +1. 상대에게 화산지대가 있으면 상대 🔥 크리처 −2" },
+    { id: "highland", type: "env", sub: "terrain", name: "고원",     icon: "⛰️", tag: "wild",  text: "상대 필드에 초원이나 농지가 있으면 내 야수 크리처 +2" },
+    // 환경: 기후
+    { id: "sunny",    type: "env", sub: "weather", name: "맑음", icon: "☀️", tag: "farm",  text: "내 🌾 크리처 +2" },
+    { id: "rain",     type: "env", sub: "weather", name: "폭우", icon: "🌧️", tag: "water", text: "내 💧 크리처 +2, 🔥 크리처 −2" },
+    { id: "drought",  type: "env", sub: "weather", name: "가뭄", icon: "🏜️", tag: "fire",  text: "내 🔥 크리처 +2, 💧 크리처 −2" },
+    // 크리처
+    { id: "farmer",     type: "creature", name: "농부",     icon: "🧑‍🌾", race: "human",  tag: "farm",  base: 3, text: "내 필드에 초원이나 농지가 있으면 +2" },
+    { id: "shepherd",   type: "creature", name: "목동",     icon: "🐑", race: "human",  tag: "wild",  base: 2, text: "내 야수 크리처 하나당 +2" },
+    { id: "wolf",       type: "creature", name: "늑대",     icon: "🐺", race: "beast",  tag: "wild",  base: 4, text: "내 필드에 숲이 있으면 +2" },
+    { id: "bear",       type: "creature", name: "곰",       icon: "🐻", race: "beast",  tag: "wild",  base: 6, text: "특수 능력 없음" },
+    { id: "undine",     type: "creature", name: "물의 정령", icon: "🫧", race: "spirit", tag: "water", base: 3, text: "내 필드에 호수가 있으면 +3" },
+    { id: "frog",       type: "creature", name: "개구리",   icon: "🐸", race: "beast",  tag: "water", base: 2, text: "내 기후가 폭우면 +4" },
+    { id: "salamander", type: "creature", name: "불도마뱀", icon: "🦎", race: "beast",  tag: "fire",  base: 3, text: "내 필드에 화산지대가 있으면 +4" },
+    { id: "ifrit",      type: "creature", name: "불의 정령", icon: "☄️", race: "spirit", tag: "fire",  base: 4, text: "내 기후가 가뭄이면 +3" },
+    { id: "knight",     type: "creature", name: "화염 기사", icon: "⚔️", race: "human",  tag: "fire",  base: 5, text: "특수 능력 없음" },
+    { id: "hunter",     type: "creature", name: "사냥꾼",   icon: "🏹", race: "human",  tag: "wild",  base: 3, text: "상대 필드의 야수 크리처 하나당 +2" },
+    // 이벤트: 단발 (태그 없음)
+    { id: "farming",  type: "event", sub: "buff",      name: "농사", icon: "🧺", text: "이번 세트에 낸 내 크리처가 🌾면 그 크리처 +5" },
+    { id: "ambush",   type: "event", sub: "buff",      name: "매복", icon: "🗡️", text: "상대 필드에 숲이 있으면 이번 세트에 낸 내 크리처 +4" },
+    { id: "raid",     type: "event", sub: "buff",      name: "약탈", icon: "💰", text: "상대 필드에 초원이나 농지가 있으면 이번 세트에 낸 내 크리처 +3" },
+    { id: "training", type: "event", sub: "buff",      name: "훈련", icon: "🎯", text: "이번 세트에 낸 내 크리처 +2" },
+    { id: "check",    type: "event", sub: "buff",      name: "견제", icon: "⚖️", text: "상대 필드 점수가 내 필드 점수보다 높으면 이번 세트에 낸 내 크리처 +5" },
+    { id: "curse",    type: "event", sub: "buff",      name: "저주", icon: "🧿", text: "상대가 이번 세트에 낸 크리처 −3" },
+    { id: "plague",   type: "event", sub: "buff",      name: "역병", icon: "🦠", text: "상대 야수 크리처 모두 −2" },
+    { id: "ward",     type: "event", sub: "buff",      name: "수호", icon: "🔰", text: "이번 세트에 상대 단발 이벤트로 받는 감점을 막는다" },
+    { id: "clearing", type: "event", sub: "transform", name: "개간", icon: "🪓", from: ["forest"], to: "grass", text: "내 숲을 모두 초원으로 바꾼다" },
+    { id: "flood",    type: "event", sub: "transform", name: "홍수", icon: "🌀", from: ["grass", "farmland"], to: "lake", text: "내 초원과 농지를 모두 호수로 바꾼다" },
+    { id: "wildfire", type: "event", sub: "transform", name: "산불", icon: "♨️", from: ["forest"], to: "volcano", text: "내 숲을 모두 화산지대로 바꾼다" },
+    // 이벤트: 상시 (태그 있음)
+    { id: "harvest", type: "event", sub: "persist", name: "풍년제",   icon: "🎑", tag: "farm",  text: "상시: 내 🌾 크리처 +2" },
+    { id: "hunt",    type: "event", sub: "persist", name: "사냥철",   icon: "🦌", tag: "wild",  text: "상시: 내 야수 크리처 +2" },
+    { id: "spring",  type: "event", sub: "persist", name: "정령의 샘", icon: "⛲", tag: "water", text: "상시: 내 정령 크리처 +2" },
+    { id: "rite",    type: "event", sub: "persist", name: "화염 의식", icon: "🕯️", tag: "fire",  text: "상시: 내 🔥 크리처 +2" },
+    { id: "fog",     type: "event", sub: "persist", name: "독안개",   icon: "☠️", tag: "water", text: "상시: 상대 크리처 중 기본 점수가 가장 높은 하나 −2" },
+    { id: "beacon",  type: "event", sub: "persist", name: "봉화",     icon: "🏮", tag: "fire",  text: "상시: 상대 필드에 숲이 있으면 상대 야수 크리처 −1" }
+  ];
+  const CARD = {};
+  CARDS.forEach(c => { CARD[c.id] = c; });
+  const SUB_LABEL = { terrain: "지형", weather: "기후", buff: "단발 이벤트", transform: "단발 이벤트", persist: "상시 이벤트" };
+
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+  let S = null;
+
+  // ---------- 상태 ----------
+  function emptyField() { return { terrains: [], weather: null, pastWeather: [], creatures: [], persist: [], used: [], thisCreature: -1 }; }
+  function makeSide(name) {
+    const deck = {};
+    TYPES.forEach(t => { deck[t] = shuffle(CARDS.filter(c => c.type === t).map(c => c.id)); });
+    return { name, deck, hand: { env: [], creature: [], event: [] }, played: {}, order: [], field: emptyField() };
+  }
+  function drawHands() {
+    [S.player, S.dealer].forEach(side => {
+      TYPES.forEach(t => {
+        side.deck[t] = shuffle(side.deck[t].concat(side.hand[t]));
+        side.hand[t] = side.deck[t].splice(0, 3);
+      });
+      side.played = {};
+      side.order = [];
+    });
+  }
+  function newGame() {
+    S = { set: 1, turn: 1, phase: "pick", sel: null, player: makeSide("나"), dealer: makeSide("딜러"),
+          log: [], phaseMsg: "", fresh: {}, history: [], tab: "env", openBd: null };
+    drawHands();
+    $("overlay").hidden = true;
+    addLog("딜러가 카드를 나눠준다. 세트 1 시작.", "");
+    render();
+  }
+  function addLog(msg, cls) { S.log.unshift({ msg, cls: cls || "" }); if (S.log.length > 40) S.log.pop(); }
+
+  // ---------- 시뮬레이션 단계 ----------
+  const hasT = (F, id) => F.terrains.includes(id);
+
+  function phaseEnv(F, id, log) {
+    if (!id) return;
+    const c = CARD[id];
+    if (c.sub === "terrain") { F.terrains.push(id); log && log(c.name + " 지형이 펼쳐졌다."); }
+    else {
+      if (F.weather) F.pastWeather.push(F.weather);
+      F.weather = id;
+      log && log("기후가 " + c.name + "(으)로 바뀌었다.");
+    }
+  }
+  function phaseCreature(F, id, log) {
+    if (!id) { F.thisCreature = -1; return; }
+    F.creatures.push({ id, notes: [], set: S ? S.set : 0 });
+    F.thisCreature = F.creatures.length - 1;
+    log && log(CARD[id].name + "이(가) 나타났다.");
+  }
+  function phaseEvents(A, B, ea, eb, logA, logB) {
+    const pairs = [[A, B, ea, logA, eb], [B, A, eb, logB, ea]];
+    // 1) 지형 변화
+    pairs.forEach(([F, , id, log]) => {
+      if (!id || CARD[id].sub !== "transform") return;
+      const c = CARD[id];
+      let n = 0;
+      F.terrains = F.terrains.map(t => (c.from.includes(t) ? (n++, c.to) : t));
+      F.used.push(id);
+      log && log(c.name + ": " + (n ? "지형 " + n + "개가 " + CARD[c.to].name + "(으)로 바뀌었다." : "바꿀 지형이 없었다."), n ? "good" : "");
+    });
+    // 2) 단발 이벤트 (점수, 감점, 수호). 판정용 점수는 지형 변화 직후 상태로 고정
+    const snap = pairs.map(([F, O]) => scoreField(F, O).total);
+    pairs.forEach(([F, O, id, log, oid], k) => {
+      if (!id || CARD[id].sub !== "buff") return;
+      const c = CARD[id];
+      F.used.push(id);
+      if (id === "ward") { log && log("수호: 이번 세트의 감점을 막는 결계를 쳤다.", "good"); return; }
+      if (id === "curse" || id === "plague") {
+        if (oid === "ward") { log && log(c.name + ": 상대의 수호에 막혔다.", "bad"); return; }
+        const targets = id === "curse"
+          ? (O.creatures[O.thisCreature] ? [O.creatures[O.thisCreature]] : [])
+          : O.creatures.filter(cr => CARD[cr.id].race === "beast");
+        const v = id === "curse" ? -3 : -2;
+        targets.forEach(cr => cr.notes.push({ label: "상대 " + c.name, v }));
+        log && log(c.name + ": " + (targets.length ? targets.map(cr => "상대 " + CARD[cr.id].name).join(", ") + " " + v : "대상이 없었다."), targets.length ? "good" : "bad");
+        return;
+      }
+      const tc = F.creatures[F.thisCreature];
+      let v = 0;
+      if (tc) {
+        if (id === "farming") v = CARD[tc.id].tag === "farm" ? 5 : 0;
+        else if (id === "ambush") v = hasT(O, "forest") ? 4 : 0;
+        else if (id === "raid") v = (hasT(O, "grass") || hasT(O, "farmland")) ? 3 : 0;
+        else if (id === "training") v = 2;
+        else if (id === "check") v = snap[1 - k] > snap[k] ? 5 : 0;
+      }
+      if (v) tc.notes.push({ label: c.name, v });
+      log && log(c.name + ": " + (v ? CARD[tc.id].name + " +" + v : "조건이 맞지 않았다."), v ? "good" : "bad");
+    });
+    // 3) 상시 이벤트
+    pairs.forEach(([F, , id, log]) => {
+      if (!id || CARD[id].sub !== "persist") return;
+      F.persist.push(id);
+      log && log(CARD[id].name + "이(가) 시작되었다.");
+    });
+  }
+
+  function tagCounts(F) {
+    const n = { farm: 0, wild: 0, water: 0, fire: 0 };
+    F.terrains.forEach(t => n[CARD[t].tag]++);
+    if (F.weather) n[CARD[F.weather].tag]++;
+    F.creatures.forEach(c => n[CARD[c.id].tag]++);
+    F.persist.forEach(p => n[CARD[p].tag]++);
+    return n;
+  }
+
+  function scoreField(F, O) {
+    O = O || emptyField();
+    const counts = tagCounts(F);
+    const fogTarget = F.creatures.reduce((b, cr, j) => (b < 0 || CARD[cr.id].base > CARD[F.creatures[b].id].base ? j : b), -1);
+    const rows = F.creatures.map((cr, i) => {
+      const c = CARD[cr.id];
+      const parts = [];
+      const add = (label, v) => {
+        if (!v) return;
+        const ex = parts.find(p => p.label === label);
+        if (ex) ex.v += v; else parts.push({ label, v });
+      };
+      switch (c.id) {
+        case "farmer": if (hasT(F, "grass") || hasT(F, "farmland")) add("능력", 2); break;
+        case "shepherd": add("능력", 2 * F.creatures.filter((o, j) => j !== i && CARD[o.id].race === "beast").length); break;
+        case "wolf": if (hasT(F, "forest")) add("능력", 2); break;
+        case "undine": if (hasT(F, "lake")) add("능력", 3); break;
+        case "frog": if (F.weather === "rain") add("능력", 4); break;
+        case "salamander": if (hasT(F, "volcano")) add("능력", 4); break;
+        case "ifrit": if (F.weather === "drought") add("능력", 3); break;
+        case "hunter": add("능력", 2 * O.creatures.filter(o => CARD[o.id].race === "beast").length); break;
+      }
+      F.terrains.forEach(t => {
+        const n = CARD[t].name;
+        if (t === "grass") add(n, 1);
+        else if (t === "farmland" && c.race === "human") add(n, hasT(F, "lake") ? 3 : 2);
+        else if (t === "forest" && c.race === "beast") add(n, hasT(F, "volcano") ? 0 : 2);
+        else if (t === "marsh" && c.tag === "water") add(n, 1);
+        else if (t === "highland" && c.race === "beast") add(n, (hasT(O, "grass") || hasT(O, "farmland")) ? 2 : 0);
+        else if (t === "lake" && c.race === "spirit") add(n, 2);
+        else if (t === "volcano") add(n, c.tag === "fire" ? 3 : -1);
+      });
+      if (F.weather) {
+        const w = F.weather, n = CARD[w].name;
+        if (w === "sunny" && c.tag === "farm") add(n, 2);
+        if (w === "rain") { if (c.tag === "water") add(n, 2); if (c.tag === "fire") add(n, -2); }
+        if (w === "drought") { if (c.tag === "fire") add(n, 2); if (c.tag === "water") add(n, -2); }
+      }
+      F.persist.forEach(p => {
+        const n = CARD[p].name;
+        if (p === "harvest" && c.tag === "farm") add(n, 2);
+        if (p === "hunt" && c.race === "beast") add(n, 2);
+        if (p === "spring" && c.race === "spirit") add(n, 2);
+        if (p === "rite" && c.tag === "fire") add(n, 2);
+      });
+      O.terrains.forEach(t => { if (t === "marsh" && hasT(F, "volcano") && c.tag === "fire") add("상대 늪지", -2); });
+      O.persist.forEach(p => {
+        if (p === "beacon" && hasT(F, "forest") && c.race === "beast") add("상대 봉화", -1);
+        if (p === "fog" && i === fogTarget) add("상대 독안개", -2);
+      });
+      cr.notes.forEach(nt => add(nt.label, nt.v));
+      const k = counts[c.tag];
+      if (k >= 5) add(TAGS[c.tag].icon + " 시너지", CFG.SYN5);
+      else if (k >= 3) add(TAGS[c.tag].icon + " 시너지", CFG.SYN3);
+      const total = Math.max(0, c.base + parts.reduce((a, p) => a + p.v, 0));
+      return { id: cr.id, base: c.base, parts, total };
+    });
+    return { rows, counts, total: rows.reduce((a, r) => a + r.total, 0) };
+  }
+
+  // ---------- 딜러 AI ----------
+  function simulate(Ff, Of, fc, oc) {
+    const F = clone(Ff), O = clone(Of);
+    phaseEnv(F, fc.env); phaseEnv(O, oc.env);
+    phaseCreature(F, fc.creature); phaseCreature(O, oc.creature);
+    phaseEvents(F, O, fc.event, oc.event);
+    return scoreField(F, O).total - scoreField(O, F).total;
+  }
+  function aiPick() {
+    const D = S.dealer, P = S.player;
+    const opts = TYPES.map(t => (D.played[t] ? [D.played[t]] : D.hand[t]));
+    const known = {};
+    TYPES.forEach(t => { if (P.played[t]) known[t] = P.played[t]; });
+    let best = null, bestV = -Infinity;
+    opts[0].forEach(e => opts[1].forEach(c => opts[2].forEach(v => {
+      const val = simulate(D.field, P.field, { env: e, creature: c, event: v }, known) + Math.random() * CFG.AI_NOISE;
+      if (val > bestV) { bestV = val; best = { env: e, creature: c, event: v }; }
+    })));
+    const remaining = TYPES.filter(t => !D.played[t]);
+    let type;
+    if (remaining.length > 1 && remaining.includes("event") && Math.random() < 0.7) {
+      const r = remaining.filter(t => t !== "event");
+      type = r[Math.floor(Math.random() * r.length)];
+    } else {
+      type = remaining[Math.floor(Math.random() * remaining.length)];
+    }
+    return { type, id: best[type] };
+  }
+
+  // ---------- 진행 ----------
+  function selectCard(type, idx) {
+    if (S.phase !== "pick" || S.player.played[type]) return;
+    S.sel = (S.sel && S.sel.type === type && S.sel.idx === idx) ? null : { type, idx };
+    render();
+  }
+
+  async function submit() {
+    if (S.phase !== "pick" || !S.sel) return;
+    const ai = aiPick();
+    const P = S.player, D = S.dealer;
+    const pid = P.hand[S.sel.type].splice(S.sel.idx, 1)[0];
+    P.played[S.sel.type] = pid;
+    P.order.push({ type: S.sel.type, id: pid });
+    D.hand[ai.type].splice(D.hand[ai.type].indexOf(ai.id), 1);
+    D.played[ai.type] = ai.id;
+    D.order.push({ type: ai.type, id: ai.id, hidden: true });
+    S.sel = null;
+    S.phase = "reveal";
+    S.phaseMsg = "공개!";
+    render();
+    await sleep(CFG.REVEAL_MS);
+    D.order[D.order.length - 1].hidden = false;
+    S.fresh["d" + (D.order.length - 1)] = true;
+    addLog(S.turn + "턴: 나는 " + CARD[pid].name + ", 딜러는 " + CARD[ai.id].name + ".", "");
+    if (S.turn === 3) { S.phase = "sim"; render(); await runSim(); }
+    else { S.turn++; S.phase = "pick"; S.tab = TYPES.find(t => !S.player.played[t]); render(); }
+  }
+
+  async function runSim() {
+    const P = S.player, D = S.dealer;
+    const lp = (m, c) => addLog("나 · " + m, c);
+    const ld = (m, c) => addLog("딜러 · " + m, c);
+    const step = async (label, fn) => {
+      S.phaseMsg = label;
+      fn();
+      render();
+      await sleep(CFG.STEP_MS);
+    };
+    await sleep(400);
+    await step("지형 단계", () => { phaseEnv(P.field, P.played.env, lp); phaseEnv(D.field, D.played.env, ld); });
+    await step("크리처 단계", () => {
+      phaseCreature(P.field, P.played.creature, lp); phaseCreature(D.field, D.played.creature, ld);
+      S.freshCre = true;
+    });
+    await step("이벤트 단계", () => { phaseEvents(P.field, D.field, P.played.event, D.played.event, lp, ld); });
+    finishSet();
+  }
+
+  function finishSet() {
+    const ps = scoreField(S.player.field, S.dealer.field), ds = scoreField(S.dealer.field, S.player.field);
+    S.history.push({ set: S.set, p: ps.total, d: ds.total });
+    S.phase = S.set === 3 ? "over" : "setEnd";
+    S.phaseMsg = "";
+    addLog("세트 " + S.set + " 결과: 나 " + ps.total + ", 딜러 " + ds.total + ".", ps.total >= ds.total ? "good" : "bad");
+    render();
+    showResult(ps, ds);
+  }
+
+  function nextSet() {
+    S.set++; S.turn = 1; S.phase = "pick"; S.tab = "env"; S.openBd = null;
+    drawHands();
+    addLog("세트 " + S.set + " 시작. 손패를 새로 받았다.", "");
+    $("overlay").hidden = true;
+    render();
+  }
+
+  // ---------- 렌더 ----------
+  function rowText(r) {
+    const parts = ["기본 " + r.base].concat(r.parts.map(p => p.label + " " + (p.v > 0 ? "+" : "−") + Math.abs(p.v)));
+    return "<b>" + CARD[r.id].name + " " + r.total + "</b> = " + parts.join(", ");
+  }
+
+  function showResult(ps, ds) {
+    const last = S.set === 3;
+    const pw = ps.total > ds.total, dw = ds.total > ps.total;
+    let title, note;
+    if (last) {
+      title = pw ? "승리" : dw ? "패배" : "무승부";
+      note = "마지막 세트 점수로 승패가 결정됐어요.";
+    } else {
+      title = "세트 " + S.set + " 결과";
+      note = "중간 점수예요. 승패는 마지막 3세트 점수로만 가려져요. 필드는 그대로 다음 세트로 이어집니다.";
+    }
+    const list = rs => rs.rows.length ? rs.rows.map(r => "<p>" + rowText(r) + "</p>").join("") : "<p>크리처 없음</p>";
+    $("panel").innerHTML =
+      "<h2>" + title + "</h2><p class=\"note\">" + note + "</p>" +
+      "<div class=\"vs\"><div><div class=\"who\">나</div><div class=\"num" + (pw ? " win" : "") + "\">" + ps.total + "</div></div>" +
+      "<div class=\"who\">대</div>" +
+      "<div><div class=\"who\">딜러</div><div class=\"num" + (dw ? " win" : "") + "\">" + ds.total + "</div></div></div>" +
+      "<div class=\"cols\"><div><h3>내 크리처</h3>" + list(ps) + "</div><div><h3>딜러 크리처</h3>" + list(ds) + "</div></div>" +
+      "<div class=\"btnrow\"><button id=\"ovBtn\">" + (last ? "새 게임" : "세트 " + (S.set + 1) + " 시작") + "</button></div>";
+    $("ovBtn").onclick = last ? newGame : nextSet;
+    $("overlay").hidden = false;
+  }
+
+  function chips(c) {
+    let h = "";
+    if (c.tag) h += "<span>" + TAGS[c.tag].icon + TAGS[c.tag].name + "</span>";
+    if (c.race) h += "<span>" + RACES[c.race] + "</span>";
+    return h;
+  }
+  function cardHTML(id, extra, attrs) {
+    const c = CARD[id];
+    const label = c.type === "creature" ? "크리처" : SUB_LABEL[c.sub];
+    return "<div class=\"card t-" + c.type + (extra || "") + "\"" + (attrs || "") + ">" +
+      "<div class=\"c-top\"><span class=\"c-type\">" + label + "</span>" + (c.base != null ? "<span class=\"c-base\">" + c.base + "</span>" : "") + "</div>" +
+      "<div class=\"c-icon\">" + c.icon + "</div>" +
+      "<div class=\"c-name\">" + c.name + "</div>" +
+      "<div class=\"c-chips\">" + chips(c) + "</div>" +
+      "<div class=\"c-text\">" + c.text + "</div></div>";
+  }
+
+  function fieldHTML(side, other) {
+    const F = side.field, sc = scoreField(F, other.field);
+    const terr = F.terrains.length ? F.terrains.map(t => "<span class=\"chip env\">" + CARD[t].icon + " " + CARD[t].name + "</span>").join("") : "<span class=\"none\">없음</span>";
+    const weather = (F.pastWeather.map(w => "<span class=\"chip env past\">" + CARD[w].icon + " " + CARD[w].name + "</span>").join("")) +
+      (F.weather ? "<span class=\"chip env\">" + CARD[F.weather].icon + " " + CARD[F.weather].name + "</span>" : "<span class=\"none\">없음</span>");
+    const pers = F.persist.length ? F.persist.map(p => "<span class=\"chip evt\">" + CARD[p].icon + " " + CARD[p].name + "</span>").join("") : "<span class=\"none\">없음</span>";
+    const tags = Object.keys(TAGS).map(k => "<span class=\"chip tagc" + (sc.counts[k] >= 3 ? " on" : "") + "\" title=\"3개 이상이면 시너지\">" + TAGS[k].icon + " " + sc.counts[k] + "</span>").join("");
+    const key = side === S.player ? "p" : "d";
+    const ob = S.openBd && S.openBd.k === key ? sc.rows[S.openBd.i] : null;
+    const openLine = ob ? "<p class=\"bd-line\">" + rowText(ob) + "</p>" : "";
+    const cre = sc.rows.length ? sc.rows.map((r, i) => {
+      const fresh = S.freshCre && i === sc.rows.length - 1 ? " fresh" : "";
+      const open = ob && S.openBd.i === i ? " open" : "";
+      return "<div class=\"mini" + fresh + open + "\" data-k=\"" + key + "\" data-i=\"" + i + "\" role=\"button\" tabindex=\"0\" title=\"" + rowText(r).replace(/<[^>]+>/g, "") + "\"><div class=\"mi\">" + CARD[r.id].icon + "</div><div class=\"mn\">" + CARD[r.id].name + "</div><div class=\"ms\">" + r.total + "</div></div>";
+    }).join("") : "<span class=\"none\">아직 크리처가 없어요</span>";
+    const bd = sc.rows.length ? "<details class=\"breakdown\"><summary>점수 내역</summary>" + sc.rows.map(r => "<p>" + rowText(r) + "</p>").join("") + "</details>" : "";
+    return "<div class=\"field\">" +
+      "<div class=\"frow\"><span class=\"flabel\">지형</span>" + terr + "</div>" +
+      "<div class=\"frow\"><span class=\"flabel\">기후</span>" + weather + "</div>" +
+      "<div class=\"frow\"><span class=\"flabel\">상시</span>" + pers + "</div>" +
+      "<div class=\"frow\"><span class=\"flabel\">태그</span>" + tags + "</div>" +
+      "<div class=\"creatures\">" + cre + "</div>" + openLine + bd + "</div>";
+  }
+
+  function subsHTML(side, isDealer) {
+    let h = "<div class=\"subs\">";
+    for (let i = 0; i < 3; i++) {
+      const o = side.order[i];
+      h += "<div><div class=\"slotlabel\">" + (i + 1) + "턴</div>";
+      if (!o) h += "<div class=\"emptyslot\">" + (S.phase === "pick" && i === S.turn - 1 ? "고르는 중" : "") + "</div>";
+      else if (o.hidden) h += "<div class=\"card back\"></div>";
+      else h += cardHTML(o.id, isDealer && S.fresh["d" + i] ? " flip" : "");
+      h += "</div>";
+    }
+    return h + "</div>";
+  }
+
+  function sideHTML(side, isDealer) {
+    const other = isDealer ? S.player : S.dealer;
+    const sc = scoreField(side.field, other.field);
+    return "<div class=\"side-head\"><h2>" + (isDealer ? "딜러" : "나") + "</h2><div class=\"ftotal\">필드 점수<b>" + sc.total + "</b></div></div>" +
+      (isDealer ? fieldHTML(side, other) + subsHTML(side, true) : subsHTML(side, false) + "<div style=\"height:10px\"></div>" + fieldHTML(side, other));
+  }
+
+  function render() {
+    $("progress").innerHTML = "세트 <b>" + S.set + "</b>/3 &nbsp; 턴 <b>" + Math.min(S.turn, 3) + "</b>/3";
+    $("dealerSide").innerHTML = sideHTML(S.dealer, true);
+    $("playerSide").innerHTML = sideHTML(S.player, false);
+
+    let st = "";
+    if (S.phase === "pick") {
+      const left = TYPES.filter(t => !S.player.played[t]).map(t => TYPE_NAME[t]).join(", ");
+      const selName = S.sel ? CARD[S.player.hand[S.sel.type][S.sel.idx]].name : null;
+      st = "<span class=\"msg\">" + (selName ? selName + "을(를) 낼까요?" : "아직 안 낸 종류(" + left + ") 중 한 장을 고르세요.") + "</span>" +
+           "<button id=\"submitBtn\"" + (S.sel ? "" : " disabled") + ">제출</button>";
+    } else {
+      st = "<span class=\"msg phase\">" + (S.phaseMsg || "") + "</span>";
+    }
+    $("status").innerHTML = st;
+    const sb = $("submitBtn");
+    if (sb) sb.onclick = submit;
+
+    $("tabs").innerHTML = TYPES.map(t => "<button class=\"" + (S.tab === t ? "active" : "") + (S.player.played[t] ? " done" : "") + "\" data-tab=\"" + t + "\">" + TYPE_NAME[t] + (S.player.played[t] ? " ✓" : "") + "</button>").join("");
+    $("tray").classList.toggle("idle", S.phase !== "pick");
+
+    let hh = "";
+    TYPES.forEach(t => {
+      const done = !!S.player.played[t];
+      hh += "<div class=\"hgroup" + (done ? " done" : "") + (S.tab === t ? " active" : "") + "\"><div class=\"hlabel\"><b>" + TYPE_NAME[t] + "</b>" + (done ? " (이번 세트에 냈어요)" : "") + "</div><div class=\"hcards\">";
+      S.player.hand[t].forEach((id, i) => {
+        const sel = S.sel && S.sel.type === t && S.sel.idx === i ? " sel" : "";
+        hh += cardHTML(id, sel, " data-t=\"" + t + "\" data-i=\"" + i + "\" tabindex=\"" + (done ? -1 : 0) + "\" role=\"button\"");
+      });
+      hh += "</div></div>";
+    });
+    $("hand").innerHTML = hh;
+
+    $("log").innerHTML = S.log.slice(0, 6).map(l => "<p class=\"" + l.cls + "\">" + l.msg + "</p>").join("");
+    S.fresh = {};
+    S.freshCre = false;
+    setTrayH();
+  }
+
+  $("hand").addEventListener("click", e => {
+    const el = e.target.closest(".card[data-t]");
+    if (el) selectCard(el.dataset.t, +el.dataset.i);
+  });
+  $("hand").addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const el = e.target.closest(".card[data-t]");
+    if (el) { e.preventDefault(); selectCard(el.dataset.t, +el.dataset.i); }
+  });
+
+  $("tabs").addEventListener("click", e => {
+    const b = e.target.closest("button[data-tab]");
+    if (!b) return;
+    S.tab = b.dataset.tab;
+    render();
+  });
+  document.addEventListener("click", e => {
+    const m = e.target.closest(".mini[data-k]");
+    if (!m) return;
+    const k = m.dataset.k, i = +m.dataset.i;
+    S.openBd = S.openBd && S.openBd.k === k && S.openBd.i === i ? null : { k, i };
+    render();
+  });
+  function setTrayH() {
+    const t = $("tray");
+    if (t) document.documentElement.style.setProperty("--tray-h", t.offsetHeight + "px");
+  }
+  window.addEventListener("resize", setTrayH);
+
+  newGame();
+})();
+</script>
+</body>
+</html>
