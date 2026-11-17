@@ -248,6 +248,24 @@ details.rules p { margin: 0 0 6px; }
   .vs .num { font-size: 1.8rem; }
 }
 
+.hright { display: flex; align-items: center; gap: 12px; }
+button.small { padding: 4px 10px; font-size: .82rem; }
+.badge { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--evt); color: #fff; font-size: .75rem; vertical-align: 1px; }
+.menu { display: grid; gap: 10px; max-width: 300px; margin: 6px auto 0; }
+.menu > button { width: 100%; padding: 11px 16px; }
+.menu-sep { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 8px; }
+.joinrow { display: flex; gap: 8px; }
+.joinrow input {
+  flex: 1; min-width: 0; font: inherit; font-family: "Cinzel", "Gowun Batang", serif; font-size: 1.1rem;
+  letter-spacing: .2em; text-transform: uppercase; text-align: center; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--slot); color: var(--ink);
+}
+.joinrow input:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+.menu-msg { min-height: 1.4em; text-align: center; font-size: .88rem; color: var(--sel); margin: 4px 0 0; }
+.roomcode { font-family: "Cinzel", "Gowun Batang", serif; font-size: 2.8rem; font-weight: 700; letter-spacing: .25em; text-align: center; margin: 4px 0 8px; padding-left: .25em; }
+.panel .note.small { font-size: .8rem; }
+.linktext { word-break: break-all; color: var(--ink); }
+
 @media (prefers-reduced-motion: reduce) {
   .card, .mini { transition: none; }
   .card.flip, .mini.fresh { animation: none; }
@@ -258,7 +276,7 @@ details.rules p { margin: 0 0 6px; }
 <div class="app">
   <header class="top">
     <h1>딜러 대결</h1>
-    <div class="progress" id="progress"></div>
+    <div class="hright"><div class="progress" id="progress"></div><button id="btnMenu" class="ghost small">메뉴</button></div>
   </header>
 
   <section class="side" id="dealerSide"></section>
@@ -287,14 +305,19 @@ details.rules p { margin: 0 0 6px; }
     <h3>상호작용</h3>
     <p>지형끼리 영향을 줘요. 농지는 호수가 있으면 더 강해지고, 숲은 화산지대와 함께 있으면 불타서 효과가 사라져요. 늪지, 고원, 사냥꾼, 봉화, 독안개는 상대 필드를 보고 내 크리처를 강하게 하거나 상대 크리처를 약하게 합니다.</p>
     <p>저주와 역병은 상대 크리처 점수를 영구히 깎아요. 같은 세트에 상대가 수호를 냈다면 막힙니다. 견제는 지형 변화 직후의 필드 점수로 판정해요.</p>
+    <h3>온라인 대결</h3>
+    <p>메뉴에서 방 만들기를 누르면 네 자리 방 코드가 나와요. 친구가 그 코드를 입력하거나 초대 링크를 열면 바로 시작합니다. 카드는 고른 순간 내용을 숨긴 채 잠기고, 둘 다 고른 뒤에야 동시에 공개돼서 먼저 고른 쪽의 카드를 엿볼 수 없어요.</p>
   </details>
 </div>
 
 <div class="overlay" id="overlay" hidden><div class="panel" id="panel"></div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 (() => {
   const CFG = { SYN3: 3, SYN5: 6, AI_NOISE: 3, REVEAL_MS: 700, STEP_MS: 1100 };
+  const NET_PREFIX = "dealer-duel-kuy08070-v1-";
+  const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
   const TAGS = {
     farm:  { name: "농경", icon: "🌾" },
@@ -358,8 +381,14 @@ details.rules p { margin: 0 0 6px; }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const clone = o => JSON.parse(JSON.stringify(o));
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[ch]));
 
   let S = null;
+  const NET = { peer: null, conn: null, role: null, code: null, session: 0, commits: {}, reveals: {}, sentReveal: {} };
+  let resolving = false;
+
+  const online = () => S && S.mode === "online";
+  const oppName = () => (online() ? "상대" : "딜러");
 
   // ---------- 상태 ----------
   function emptyField() { return { terrains: [], weather: null, pastWeather: [], creatures: [], persist: [], used: [], thisCreature: -1 }; }
@@ -378,12 +407,15 @@ details.rules p { margin: 0 0 6px; }
       side.order = [];
     });
   }
-  function newGame() {
-    S = { set: 1, turn: 1, phase: "pick", sel: null, player: makeSide("나"), dealer: makeSide("딜러"),
-          log: [], phaseMsg: "", fresh: {}, history: [], tab: "env", openBd: null };
+  function newGame(mode, gameNo) {
+    S = { mode: mode || "ai", gameNo: gameNo || 1, set: 1, turn: 1, phase: "pick", sel: null,
+          player: makeSide("나"), dealer: makeSide("상대"),
+          log: [], phaseMsg: "", fresh: {}, history: [], tab: "env", openBd: null,
+          pending: null, rematchMe: false, rematchOpp: false };
+    resolving = false;
     drawHands();
     $("overlay").hidden = true;
-    addLog("딜러가 카드를 나눠준다. 세트 1 시작.", "");
+    addLog(online() ? "상대와 연결됐다. 세트 1 시작." : "딜러가 카드를 나눠준다. 세트 1 시작.", "");
     render();
   }
   function addLog(msg, cls) { S.log.unshift({ msg, cls: cls || "" }); if (S.log.length > 40) S.log.pop(); }
@@ -418,7 +450,7 @@ details.rules p { margin: 0 0 6px; }
       F.used.push(id);
       log && log(c.name + ": " + (n ? "지형 " + n + "개가 " + CARD[c.to].name + "(으)로 바뀌었다." : "바꿀 지형이 없었다."), n ? "good" : "");
     });
-    // 2) 단발 이벤트 (점수, 감점, 수호). 판정용 점수는 지형 변화 직후 상태로 고정
+    // 2) 단발 이벤트. 판정용 점수는 지형 변화 직후 상태로 고정
     const snap = pairs.map(([F, O]) => scoreField(F, O).total);
     pairs.forEach(([F, O, id, log, oid], k) => {
       if (!id || CARD[id].sub !== "buff") return;
@@ -554,38 +586,65 @@ details.rules p { margin: 0 0 6px; }
   }
 
   // ---------- 진행 ----------
+  const turnKey = () => S.gameNo + "-" + S.set + "-" + S.turn;
+
   function selectCard(type, idx) {
     if (S.phase !== "pick" || S.player.played[type]) return;
     S.sel = (S.sel && S.sel.type === type && S.sel.idx === idx) ? null : { type, idx };
     render();
   }
 
-  async function submit() {
-    if (S.phase !== "pick" || !S.sel) return;
-    const ai = aiPick();
-    const P = S.player, D = S.dealer;
-    const pid = P.hand[S.sel.type].splice(S.sel.idx, 1)[0];
-    P.played[S.sel.type] = pid;
-    P.order.push({ type: S.sel.type, id: pid });
-    D.hand[ai.type].splice(D.hand[ai.type].indexOf(ai.id), 1);
-    D.played[ai.type] = ai.id;
-    D.order.push({ type: ai.type, id: ai.id, hidden: true });
+  function playMine() {
+    const P = S.player, type = S.sel.type;
+    const pid = P.hand[type].splice(S.sel.idx, 1)[0];
+    P.played[type] = pid;
+    P.order.push({ type, id: pid });
     S.sel = null;
+    return pid;
+  }
+
+  async function revealOpp(id) {
+    const D = S.dealer;
+    D.played[CARD[id].type] = id;
+    D.order.push({ type: CARD[id].type, id, hidden: true });
     S.phase = "reveal";
     S.phaseMsg = "공개!";
     render();
     await sleep(CFG.REVEAL_MS);
     D.order[D.order.length - 1].hidden = false;
     S.fresh["d" + (D.order.length - 1)] = true;
-    addLog(S.turn + "턴: 나는 " + CARD[pid].name + ", 딜러는 " + CARD[ai.id].name + ".", "");
+    const mine = S.player.order[S.player.order.length - 1].id;
+    addLog(S.turn + "턴: 나는 " + CARD[mine].name + ", " + oppName() + "은(는) " + CARD[id].name + ".", "");
     if (S.turn === 3) { S.phase = "sim"; render(); await runSim(); }
     else { S.turn++; S.phase = "pick"; S.tab = TYPES.find(t => !S.player.played[t]); render(); }
+  }
+
+  async function submit() {
+    if (S.phase !== "pick" || !S.sel) return;
+    if (!online()) {
+      const ai = aiPick();
+      playMine();
+      S.dealer.hand[ai.type].splice(S.dealer.hand[ai.type].indexOf(ai.id), 1);
+      await revealOpp(ai.id);
+      return;
+    }
+    const pid = playMine();
+    const k = turnKey();
+    const salt = randomSalt();
+    S.pending = { key: k, id: pid, salt, committed: false };
+    S.phase = "wait";
+    render();
+    const hash = await digest(pid + ":" + salt);
+    if (!S.pending || S.pending.key !== k) return;
+    S.pending.committed = true;
+    send({ t: "commit", k, hash });
+    tryReveal();
   }
 
   async function runSim() {
     const P = S.player, D = S.dealer;
     const lp = (m, c) => addLog("나 · " + m, c);
-    const ld = (m, c) => addLog("딜러 · " + m, c);
+    const ld = (m, c) => addLog(oppName() + " · " + m, c);
     const step = async (label, fn) => {
       S.phaseMsg = label;
       fn();
@@ -607,7 +666,7 @@ details.rules p { margin: 0 0 6px; }
     S.history.push({ set: S.set, p: ps.total, d: ds.total });
     S.phase = S.set === 3 ? "over" : "setEnd";
     S.phaseMsg = "";
-    addLog("세트 " + S.set + " 결과: 나 " + ps.total + ", 딜러 " + ds.total + ".", ps.total >= ds.total ? "good" : "bad");
+    addLog("세트 " + S.set + " 결과: 나 " + ps.total + ", " + oppName() + " " + ds.total + ".", ps.total >= ds.total ? "good" : "bad");
     render();
     showResult(ps, ds);
   }
@@ -618,6 +677,213 @@ details.rules p { margin: 0 0 6px; }
     addLog("세트 " + S.set + " 시작. 손패를 새로 받았다.", "");
     $("overlay").hidden = true;
     render();
+  }
+
+  // ---------- 온라인 ----------
+  function randomSalt() {
+    const a = new Uint32Array(4);
+    (window.crypto && crypto.getRandomValues) ? crypto.getRandomValues(a) : a.forEach((_, i) => { a[i] = Math.random() * 4294967296; });
+    return Array.from(a, x => x.toString(16).padStart(8, "0")).join("");
+  }
+  async function digest(str) {
+    if (window.crypto && crypto.subtle) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
+    }
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return "f" + h.toString(16);
+  }
+  function send(m) {
+    if (NET.conn && NET.conn.open) { try { NET.conn.send(m); } catch (e) { /* 연결 종료 처리에 맡김 */ } }
+  }
+  function tryReveal() {
+    if (!online() || !S.pending || !S.pending.committed) return;
+    const k = S.pending.key;
+    if (NET.commits[k] && !NET.sentReveal[k]) {
+      NET.sentReveal[k] = true;
+      send({ t: "reveal", k, id: S.pending.id, salt: S.pending.salt });
+    }
+    tryResolve();
+  }
+  async function tryResolve() {
+    if (!online() || !S.pending || resolving) return;
+    const k = S.pending.key;
+    const r = NET.reveals[k];
+    if (!NET.sentReveal[k] || !r) return;
+    resolving = true;
+    const ok = (await digest(r.id + ":" + r.salt)) === NET.commits[k];
+    const c = CARD[r.id];
+    if (!ok || !c || S.dealer.played[c.type]) {
+      resolving = false;
+      leaveOnline("상대가 보낸 카드 정보가 올바르지 않아 게임을 멈췄어요.");
+      return;
+    }
+    S.pending = null;
+    resolving = false;
+    await revealOpp(r.id);
+  }
+  function onMessage(m) {
+    if (!m || typeof m !== "object" || !S) return;
+    if (m.t === "commit" && typeof m.k === "string" && typeof m.hash === "string") {
+      NET.commits[m.k] = m.hash;
+      if (S.phase === "pick" || S.phase === "wait") render();
+      tryReveal();
+    } else if (m.t === "reveal" && typeof m.k === "string") {
+      NET.reveals[m.k] = { id: String(m.id), salt: String(m.salt) };
+      tryResolve();
+    } else if (m.t === "rematch" && m.g === S.gameNo) {
+      S.rematchOpp = true;
+      if (!maybeRematch()) updateRematchUI();
+    } else if (m.t === "bye") {
+      leaveOnline("상대가 게임을 나갔어요.");
+    }
+  }
+  function requestRematch() {
+    if (S.rematchMe) return;
+    S.rematchMe = true;
+    send({ t: "rematch", g: S.gameNo });
+    if (!maybeRematch()) updateRematchUI();
+  }
+  function maybeRematch() {
+    if (S.rematchMe && S.rematchOpp) { newGame("online", S.gameNo + 1); return true; }
+    return false;
+  }
+  function updateRematchUI() {
+    const el = $("rematchMsg");
+    if (!el) return;
+    el.textContent = S.rematchMe ? "상대가 수락하면 바로 시작해요." : S.rematchOpp ? "상대가 한 판 더 하고 싶어 해요." : "";
+  }
+
+  function cleanupNet() {
+    NET.session++;
+    try { if (NET.conn) NET.conn.close(); } catch (e) {}
+    try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
+    NET.conn = null; NET.peer = null; NET.role = null; NET.code = null;
+    NET.commits = {}; NET.reveals = {}; NET.sentReveal = {};
+  }
+  function leaveOnline(msg) {
+    cleanupNet();
+    newGame("ai");
+    showMenu(msg);
+  }
+  function makeCode() { let s = ""; for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
+  function netErrorText(err) {
+    const t = err && err.type;
+    if (t === "peer-unavailable") return "방을 찾을 수 없어요. 코드를 다시 확인해 주세요.";
+    if (t === "browser-incompatible") return "이 브라우저는 온라인 대결을 지원하지 않아요. 크롬이나 사파리 최신 버전으로 열어주세요.";
+    if (t === "network" || t === "server-error" || t === "socket-error" || t === "socket-closed") return "온라인 연결 서버에 닿지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+    return "연결에 실패했어요" + (t ? " (" + t + ")" : "") + ". 다시 시도해 주세요.";
+  }
+  function peerReady() {
+    if (typeof window.Peer !== "function") {
+      showMenu("온라인 기능을 불러오지 못했어요. 인터넷 연결을 확인하거나, GitHub Pages 주소에서 열어주세요.");
+      return false;
+    }
+    return true;
+  }
+  function setupConn(c, sess) {
+    NET.conn = c;
+    c.on("open", () => {
+      if (sess !== NET.session) return;
+      NET.commits = {}; NET.reveals = {}; NET.sentReveal = {};
+      if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+      newGame("online", 1);
+    });
+    c.on("data", m => { if (sess === NET.session) onMessage(m); });
+    c.on("close", () => { if (sess === NET.session) leaveOnline("상대와 연결이 끊겼어요."); });
+    c.on("error", () => { if (sess === NET.session) leaveOnline("상대와 연결이 끊겼어요."); });
+  }
+  function hostRoom(attempt) {
+    if (!peerReady()) return;
+    cleanupNet();
+    const sess = NET.session;
+    const code = makeCode();
+    NET.role = "host"; NET.code = code;
+    showWaiting(code, "방을 여는 중…");
+    const peer = new Peer(NET_PREFIX + code);
+    NET.peer = peer;
+    peer.on("open", () => { if (sess === NET.session) showWaiting(code, "상대가 이 코드를 입력하면 바로 시작해요."); });
+    peer.on("connection", c => {
+      if (sess !== NET.session) return;
+      if (NET.conn) { c.close(); return; }
+      setupConn(c, sess);
+    });
+    peer.on("error", err => {
+      if (sess !== NET.session) return;
+      if (err && err.type === "unavailable-id" && (attempt || 0) < 3) { hostRoom((attempt || 0) + 1); return; }
+      if (NET.conn && NET.conn.open) return;
+      cleanupNet();
+      showMenu(netErrorText(err));
+    });
+    peer.on("disconnected", () => {
+      if (sess !== NET.session || NET.conn) return;
+      try { peer.reconnect(); } catch (e) {}
+    });
+  }
+  function joinRoom(raw) {
+    const code = String(raw || "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(code)) { menuMsg("네 자리 방 코드를 입력해 주세요."); return; }
+    if (!peerReady()) return;
+    cleanupNet();
+    const sess = NET.session;
+    NET.role = "guest"; NET.code = code;
+    menuMsg("연결하는 중…");
+    const peer = new Peer();
+    NET.peer = peer;
+    peer.on("open", () => {
+      if (sess !== NET.session) return;
+      setupConn(peer.connect(NET_PREFIX + code, { reliable: true }), sess);
+    });
+    peer.on("error", err => {
+      if (sess !== NET.session) return;
+      if (NET.conn && NET.conn.open) return;
+      cleanupNet();
+      showMenu(netErrorText(err), code);
+    });
+    setTimeout(() => {
+      if (sess === NET.session && !(NET.conn && NET.conn.open)) menuMsg("연결이 오래 걸리고 있어요. 코드를 확인하거나 다시 시도해 주세요.");
+    }, 15000);
+  }
+
+  // ---------- 메뉴 ----------
+  function menuMsg(msg) { const el = $("menuMsg"); if (el) el.textContent = msg || ""; }
+  function showMenu(msg, code) {
+    const pre = code || (location.hash.match(/^#([A-Za-z0-9]{4})$/) || [])[1] || "";
+    $("panel").innerHTML =
+      "<h2>딜러 대결</h2><p class=\"note\">환경, 크리처, 이벤트 세 장으로 조합을 만들어 겨루는 카드 게임</p>" +
+      "<div class=\"menu\"><button data-menu=\"ai\">딜러와 대결</button>" +
+      "<div class=\"menu-sep\">친구와 온라인 대결</div>" +
+      "<button data-menu=\"host\" class=\"ghost\">방 만들기</button>" +
+      "<div class=\"joinrow\"><input id=\"joinCode\" maxlength=\"4\" autocomplete=\"off\" autocapitalize=\"characters\" placeholder=\"방 코드\" aria-label=\"방 코드\" value=\"" + esc(pre.toUpperCase()) + "\"><button data-menu=\"join\" class=\"ghost\">참가</button></div>" +
+      "<p class=\"menu-msg\" id=\"menuMsg\"></p></div>";
+    menuMsg(msg || (pre ? "초대받은 방 코드가 입력되어 있어요. 참가를 누르세요." : ""));
+    $("panel").querySelectorAll("[data-menu]").forEach(b => {
+      b.onclick = () => {
+        const a = b.dataset.menu;
+        if (a === "ai") { cleanupNet(); newGame("ai"); }
+        else if (a === "host") hostRoom(0);
+        else joinRoom($("joinCode").value);
+      };
+    });
+    $("joinCode").onkeydown = e => { if (e.key === "Enter") joinRoom($("joinCode").value); };
+    $("overlay").hidden = false;
+  }
+  function showWaiting(code, msg) {
+    const link = location.origin + location.pathname + "#" + code;
+    $("panel").innerHTML =
+      "<h2>방 코드</h2><div class=\"roomcode\">" + code + "</div>" +
+      "<p class=\"note\">" + msg + "</p>" +
+      "<p class=\"note small\">초대 링크: <span class=\"linktext\">" + esc(link) + "</span></p>" +
+      "<div class=\"btnrow\"><button id=\"copyLink\" class=\"ghost\">초대 링크 복사</button> <button id=\"cancelHost\" class=\"ghost\">취소</button></div>";
+    $("copyLink").onclick = () => {
+      const b = $("copyLink");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => { b.textContent = "복사했어요"; }, () => { b.textContent = "위 링크를 직접 복사해 주세요"; });
+      } else b.textContent = "위 링크를 직접 복사해 주세요";
+    };
+    $("cancelHost").onclick = () => { cleanupNet(); showMenu(); };
+    $("overlay").hidden = false;
   }
 
   // ---------- 렌더 ----------
@@ -638,14 +904,22 @@ details.rules p { margin: 0 0 6px; }
       note = "중간 점수예요. 승패는 마지막 3세트 점수로만 가려져요. 필드는 그대로 다음 세트로 이어집니다.";
     }
     const list = rs => rs.rows.length ? rs.rows.map(r => "<p>" + rowText(r) + "</p>").join("") : "<p>크리처 없음</p>";
+    let btns;
+    if (!last) btns = "<button id=\"ovNext\">세트 " + (S.set + 1) + " 시작</button>";
+    else if (online()) btns = "<button id=\"ovRematch\">한 판 더</button> <button id=\"ovMenu\" class=\"ghost\">나가기</button><p class=\"menu-msg\" id=\"rematchMsg\"></p>";
+    else btns = "<button id=\"ovAgain\">새 게임</button> <button id=\"ovMenu\" class=\"ghost\">메뉴</button>";
     $("panel").innerHTML =
       "<h2>" + title + "</h2><p class=\"note\">" + note + "</p>" +
       "<div class=\"vs\"><div><div class=\"who\">나</div><div class=\"num" + (pw ? " win" : "") + "\">" + ps.total + "</div></div>" +
       "<div class=\"who\">대</div>" +
-      "<div><div class=\"who\">딜러</div><div class=\"num" + (dw ? " win" : "") + "\">" + ds.total + "</div></div></div>" +
-      "<div class=\"cols\"><div><h3>내 크리처</h3>" + list(ps) + "</div><div><h3>딜러 크리처</h3>" + list(ds) + "</div></div>" +
-      "<div class=\"btnrow\"><button id=\"ovBtn\">" + (last ? "새 게임" : "세트 " + (S.set + 1) + " 시작") + "</button></div>";
-    $("ovBtn").onclick = last ? newGame : nextSet;
+      "<div><div class=\"who\">" + oppName() + "</div><div class=\"num" + (dw ? " win" : "") + "\">" + ds.total + "</div></div></div>" +
+      "<div class=\"cols\"><div><h3>내 크리처</h3>" + list(ps) + "</div><div><h3>" + oppName() + " 크리처</h3>" + list(ds) + "</div></div>" +
+      "<div class=\"btnrow\">" + btns + "</div>";
+    if ($("ovNext")) $("ovNext").onclick = nextSet;
+    if ($("ovAgain")) $("ovAgain").onclick = () => newGame("ai");
+    if ($("ovRematch")) $("ovRematch").onclick = requestRematch;
+    if ($("ovMenu")) $("ovMenu").onclick = () => { if (online()) { send({ t: "bye" }); leaveOnline(); } else showMenu(); };
+    updateRematchUI();
     $("overlay").hidden = false;
   }
 
@@ -690,12 +964,17 @@ details.rules p { margin: 0 0 6px; }
       "<div class=\"creatures\">" + cre + "</div>" + openLine + bd + "</div>";
   }
 
+  const oppCommitted = () => online() && !!NET.commits[turnKey()] && (S.phase === "pick" || S.phase === "wait");
+
   function subsHTML(side, isDealer) {
     let h = "<div class=\"subs\">";
     for (let i = 0; i < 3; i++) {
       const o = side.order[i];
       h += "<div><div class=\"slotlabel\">" + (i + 1) + "턴</div>";
-      if (!o) h += "<div class=\"emptyslot\">" + (S.phase === "pick" && i === S.turn - 1 ? "고르는 중" : "") + "</div>";
+      if (!o) {
+        if (isDealer && i === S.turn - 1 && oppCommitted()) h += "<div class=\"card back\"></div>";
+        else h += "<div class=\"emptyslot\">" + (S.phase === "pick" && i === S.turn - 1 ? "고르는 중" : "") + "</div>";
+      }
       else if (o.hidden) h += "<div class=\"card back\"></div>";
       else h += cardHTML(o.id, isDealer && S.fresh["d" + i] ? " flip" : "");
       h += "</div>";
@@ -706,12 +985,12 @@ details.rules p { margin: 0 0 6px; }
   function sideHTML(side, isDealer) {
     const other = isDealer ? S.player : S.dealer;
     const sc = scoreField(side.field, other.field);
-    return "<div class=\"side-head\"><h2>" + (isDealer ? "딜러" : "나") + "</h2><div class=\"ftotal\">필드 점수<b>" + sc.total + "</b></div></div>" +
+    return "<div class=\"side-head\"><h2>" + (isDealer ? oppName() : "나") + "</h2><div class=\"ftotal\">필드 점수<b>" + sc.total + "</b></div></div>" +
       (isDealer ? fieldHTML(side, other) + subsHTML(side, true) : subsHTML(side, false) + "<div style=\"height:10px\"></div>" + fieldHTML(side, other));
   }
 
   function render() {
-    $("progress").innerHTML = "세트 <b>" + S.set + "</b>/3 &nbsp; 턴 <b>" + Math.min(S.turn, 3) + "</b>/3";
+    $("progress").innerHTML = (online() ? "<span class=\"badge\">온라인</span> " : "") + "세트 <b>" + S.set + "</b>/3 &nbsp; 턴 <b>" + Math.min(S.turn, 3) + "</b>/3";
     $("dealerSide").innerHTML = sideHTML(S.dealer, true);
     $("playerSide").innerHTML = sideHTML(S.player, false);
 
@@ -719,8 +998,11 @@ details.rules p { margin: 0 0 6px; }
     if (S.phase === "pick") {
       const left = TYPES.filter(t => !S.player.played[t]).map(t => TYPE_NAME[t]).join(", ");
       const selName = S.sel ? CARD[S.player.hand[S.sel.type][S.sel.idx]].name : null;
-      st = "<span class=\"msg\">" + (selName ? selName + "을(를) 낼까요?" : "아직 안 낸 종류(" + left + ") 중 한 장을 고르세요.") + "</span>" +
+      const oppDone = oppCommitted() ? "상대는 이미 골랐어요. " : "";
+      st = "<span class=\"msg\">" + oppDone + (selName ? selName + "을(를) 낼까요?" : "아직 안 낸 종류(" + left + ") 중 한 장을 고르세요.") + "</span>" +
            "<button id=\"submitBtn\"" + (S.sel ? "" : " disabled") + ">제출</button>";
+    } else if (S.phase === "wait") {
+      st = "<span class=\"msg phase\">" + (oppCommitted() ? "공개하는 중…" : "상대가 고르기를 기다리는 중…") + "</span>";
     } else {
       st = "<span class=\"msg phase\">" + (S.phaseMsg || "") + "</span>";
     }
@@ -758,7 +1040,6 @@ details.rules p { margin: 0 0 6px; }
     const el = e.target.closest(".card[data-t]");
     if (el) { e.preventDefault(); selectCard(el.dataset.t, +el.dataset.i); }
   });
-
   $("tabs").addEventListener("click", e => {
     const b = e.target.closest("button[data-tab]");
     if (!b) return;
@@ -772,13 +1053,22 @@ details.rules p { margin: 0 0 6px; }
     S.openBd = S.openBd && S.openBd.k === k && S.openBd.i === i ? null : { k, i };
     render();
   });
+  $("btnMenu").addEventListener("click", () => {
+    if (online()) {
+      if (!confirm("온라인 대결에서 나갈까요? 상대와의 연결이 끊어져요.")) return;
+      send({ t: "bye" });
+      leaveOnline();
+    } else showMenu();
+  });
+  window.addEventListener("beforeunload", () => { if (online()) send({ t: "bye" }); });
   function setTrayH() {
     const t = $("tray");
     if (t) document.documentElement.style.setProperty("--tray-h", t.offsetHeight + "px");
   }
   window.addEventListener("resize", setTrayH);
 
-  newGame();
+  newGame("ai");
+  showMenu();
 })();
 </script>
 </body>
